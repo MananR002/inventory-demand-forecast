@@ -7,7 +7,7 @@ A Node.js utility library for calculating forecast demand and inventory risk. Fo
 - **Simple Moving Average**: Calculate average daily demand from historical data.
 - **Days of Inventory Remaining**: Estimate how many days before stock runs out.
 - **Stockout Risk Detection**: Identify risk levels based on lead time.
-- **Demand Variability & Safety Stock** (new): Std dev of demand + formula `Z * stdDev * sqrt(LeadTime)` (default Z=1.65 for ~95% service level).
+- **Demand Variability & Safety Stock** (new): Std dev of demand + formula `Z * stdDev * sqrt(LeadTime)` (default Z=1.65 ~95% service; renamed param zScore for std stats term). Reuse avg demand for efficiency.
 - Clean, modular design with separate utility functions (keeps main files lean).
 - Comprehensive test coverage (100%).
 
@@ -59,7 +59,7 @@ console.log(forecast);
 //   riskLevel: 'high',
 //   recommendation: 'Reorder immediately',
 //   demandStdDev: 2.07,  // New: demand variability (std dev)
-//   safetyStock: 7.64    // New: Z * stdDev * sqrt(leadTime) with default Z=1.65
+//   safetyStock: 7.64    // New: zScore * stdDev * sqrt(leadTime) (default zScore=1.65)
 // }
 
 // Or use individual utilities
@@ -72,10 +72,12 @@ console.log(avgDemand); // 11.42857...
  * This makes the library robust for real-world messy data (e.g., no crashes in
  * calculateInventoryForecast([null], -1, 'invalid') → safe output).
  *
- * New: Demand variability & safety stock extension:
- * - calculateSafetyStock(historicalDemand, leadTime, [serviceLevelZ=1.65])
- * - Integrated into forecast (backward-compatible; adds demandStdDev, safetyStock fields).
- * Example output now includes: ..., demandStdDev: 2.07, safetyStock: 7.64
+ * Demand variability & safety stock extension:
+ * - calculateSafetyStock(historicalDemand, leadTime, [zScore=1.65], [avgDemand?]) - reuse avg
+ *   for optimization; param renamed to zScore (standard stats); variance note: accumulates
+ *   linearly over time (std dev scales with sqrt(time) → *sqrt(LeadTime) in formula).
+ * - Integrated into forecast (backward-compatible; adds demandStdDev, safetyStock).
+ * Example output: ..., demandStdDev: 2.07, safetyStock: 7.64
  */
 ```
 

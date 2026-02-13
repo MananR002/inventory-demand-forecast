@@ -104,19 +104,30 @@ describe('Inventory Management System', () => {
     // sampleLeadTime from top-level scope
 
 
-    test('computes demand std dev and safety stock with default Z=1.65', () => {
+    test('computes demand std dev and safety stock with default zScore=1.65', () => {
       // demandStdDev uses sample std dev (precise calc: ~2.0744 →2.07)
       // safetyStock = 1.65 * ~2.0744 * sqrt(5) ≈7.635 →7.64 (JS toFixed rounding)
+      // Tests reuse: no avgDemand passed, so computes internally (standalone compat)
       const result = calculateSafetyStock(sampleHistoricalDemand, sampleLeadTime);
       expect(result.demandStdDev).toBe(2.07);
       expect(result.safetyStock).toBeCloseTo(7.64, 2);  // Flexible for float rounding
     });
 
-    test('uses custom serviceLevelZ (e.g., for different service levels)', () => {
-      // ~99% Z; expect close for safetyStock rounding
-      const result = calculateSafetyStock(sampleHistoricalDemand, sampleLeadTime, 2.33);  // ~99% Z
+    test('uses custom zScore (e.g., for different service levels)', () => {
+      // ~99% zScore; expect close for safetyStock rounding
+      // Tests reuse: no avgDemand passed, computes internally (standalone compat)
+      const result = calculateSafetyStock(sampleHistoricalDemand, sampleLeadTime, 2.33);  // ~99% zScore
       expect(result.demandStdDev).toBe(2.07);
       expect(result.safetyStock).toBeCloseTo(10.79, 2);
+    });
+
+    // New test for reuse optimization: avgDemand param avoids redundant calc
+    // (covers if-branch; stdDev same as internal mean since avg matches)
+    test('reuses avgDemand param for optimization (when provided)', () => {
+      const avg = calculateAverageDemand(sampleHistoricalDemand);  // ~11.43
+      const result = calculateSafetyStock(sampleHistoricalDemand, sampleLeadTime, 1.65, avg);
+      expect(result.demandStdDev).toBe(2.07);  // Same as non-reuse case
+      expect(result.safetyStock).toBeCloseTo(7.64, 2);
     });
 
     test('returns zeros for invalid/empty/negative inputs (defensive consistency)', () => {
@@ -136,8 +147,9 @@ describe('Inventory Management System', () => {
 
   describe('calculateInventoryForecast', () => {
     test('computes full forecast for sample data', () => {
-      // Backward compat test: call with original 3 args (uses default Z=1.65)
+      // Backward compat test: call with original 3 args (uses default zScore=1.65)
       // Original fields unchanged; new fields added for safety stock extension
+      // Internally reuses avgDailyDemand in safety stock calc (optimization)
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime);
       // Note: avgDailyDemand = 80/7 ≈11.4286 →11.43; daysRemaining=50/11.4286≈4.375→4.38
       expect(forecast.avgDailyDemand).toBe(11.43);
@@ -146,14 +158,14 @@ describe('Inventory Management System', () => {
       expect(forecast.recommendation).toBe('Reorder immediately');
       // New fields (do not break shape)
       expect(forecast.demandStdDev).toBe(2.07);  // From safety stock utility
-      expect(forecast.safetyStock).toBeCloseTo(7.64, 2);   // Default Z=1.65 (JS rounding)
+      expect(forecast.safetyStock).toBeCloseTo(7.64, 2);   // Default zScore=1.65 (JS rounding)
     });
 
-    // New test: forecast with custom Z (still backward compat for old calls)
-    test('computes forecast with custom serviceLevelZ', () => {
+    // New test: forecast with custom zScore (still backward compat for old calls)
+    test('computes forecast with custom zScore', () => {
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime, 2.33);
       expect(forecast.demandStdDev).toBe(2.07);
-      expect(forecast.safetyStock).toBeCloseTo(10.79, 2);  // Custom Z (JS rounding)
+      expect(forecast.safetyStock).toBeCloseTo(10.79, 2);  // Custom zScore (JS rounding)
       // Original fields unchanged
       expect(forecast.riskLevel).toBe('high');
     });

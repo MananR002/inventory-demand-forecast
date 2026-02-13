@@ -16,23 +16,26 @@ const calculateSafetyStock = require('./calculateSafetyStock');
  * - Invalid data returns safe defaults (e.g., avg=0, days=0, risk='low', safetyStock=0) instead of throwing.
  * Now extended with demand variability (std dev) and safety stock for better risk planning.
  * Safety stock = Z * stdDev * sqrt(leadTime); Z defaults to 1.65 (~95% service level) if not provided.
- * This does NOT break existing output shape or calls (adds fields; optional param).
+ * Now also reuses avgDailyDemand in safety stock calc for efficiency (no redundant mean computation).
+ * This does NOT break existing output shape or calls (adds fields; optional param renamed to zScore for standard stats term).
  * @param {number[]} historicalDemand - Array of historical daily demand data.
  * @param {number} currentStock - Current stock level.
  * @param {number} leadTime - Supplier lead time in days.
- * @param {number} [serviceLevelZ=1.65] - Optional Z-score for service level (e.g., 1.28 for 90%, 2.33 for 99%).
+ * @param {number} [zScore=1.65] - Optional Z-score for service level (e.g., 1.28 for 90%, 2.33 for 99%).
  * @returns {Object} Forecast results (backward-compatible extension):
  *   - avgDailyDemand, daysRemaining, riskLevel, recommendation (original fields)
  *   - demandStdDev, safetyStock (new for variability/safety)
  */
-function calculateInventoryForecast(historicalDemand, currentStock, leadTime, serviceLevelZ = 1.65) {
+function calculateInventoryForecast(historicalDemand, currentStock, leadTime, zScore = 1.65) {
   // Existing calcs (unchanged for backward compat)
   const avgDailyDemand = calculateAverageDemand(historicalDemand);
   const daysRemaining = calculateDaysRemaining(currentStock, avgDailyDemand);
   const riskLevel = detectStockoutRisk(daysRemaining, leadTime);
 
   // New: Safety stock for demand variability (uses dedicated utility)
-  const { demandStdDev, safetyStock } = calculateSafetyStock(historicalDemand, leadTime, serviceLevelZ);
+  // Pass avgDailyDemand for reuse optimization (and zScore; old param name aliased via default)
+  // Standalone calls to calculateSafetyStock still work unchanged (back compat)
+  const { demandStdDev, safetyStock } = calculateSafetyStock(historicalDemand, leadTime, zScore, avgDailyDemand);
 
   return {
     // Original fields preserved exactly (no breaking changes for consumers)
