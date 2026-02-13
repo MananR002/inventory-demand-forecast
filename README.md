@@ -9,8 +9,9 @@ A Node.js utility library for calculating forecast demand and inventory risk. Fo
 - **Stockout Risk Detection**: Identify risk levels based on lead time.
 - **Demand Variability & Safety Stock**: Std dev of demand + formula `Z * stdDev * sqrt(LeadTime)` (default Z=1.65 ~95% service; renamed param zScore; reuses avg demand for efficiency).
 - **Reorder Point**: (Avg demand * lead time) + safety stock; reuses existing logic (no dup); what teams monitor to trigger orders.
-- **Economic Order Quantity (EOQ)** (new): Optimal order qty via std formula `sqrt(2 * annualDemand * orderCost / holdingCost)` (annual from avgDaily*250 business days for realism; reuses avg; separate utility for "how much to order").
-- Clean, modular design with separate utility functions (keeps main files lean).
+- **Economic Order Quantity (EOQ)**: Optimal order qty via std formula `sqrt(2 * annualDemand * orderCost / holdingCost)` (annual from avgDaily*250 business days for realism; reuses avg; separate utility for "how much to order").
+- **Insights Layer** (new): Human-readable status/summary/signals (demandSignal, bufferSignal etc.) in insights/ folder; final layer synthesizing all for decisions.
+- Clean, modular design with separate utility functions/folders (keeps main files lean).
 - Comprehensive test coverage (100%).
 
 ## Folder Structure
@@ -24,7 +25,9 @@ inventory-management-system/
 │   ├── detectStockoutRisk.js     # Assesses stockout risk
 │   ├── calculateSafetyStock.js   # Demand std dev + safety stock formula (reuses avg)
 │   ├── calculateReorderPoint.js  # Reorder point reusing avg + safety (no dup)
-│   └── calculateEOQ.js           # New: EOQ for order qty (reuses avg; std formula)
+│   ├── calculateEOQ.js           # EOQ for order qty (reuses avg; std formula)
+│   └── insights/                 # New folder: human-readable insights layer (summary/signals)
+│       └── generateInsights.js   # Synthesizes forecast into status/demandSignal etc.
 ├── tests/
 │   └── inventory.test.js         # Jest tests with sample data
 ├── jest.config.js                # Jest configuration
@@ -53,7 +56,7 @@ const historicalDemand = [10, 12, 15, 9, 11, 13, 10]; // daily demands
 const currentStock = 50;
 const leadTime = 5; // days
 
-// Full forecast (now extended with safety stock; backward-compatible for existing consumers)
+// Full forecast (now extended with insights layer; backward-compatible for existing consumers)
 const forecast = calculateInventoryForecast(historicalDemand, currentStock, leadTime);
 console.log(forecast);
 // Output:
@@ -65,12 +68,22 @@ console.log(forecast);
 //   demandStdDev: 2.07,  // New: demand variability (std dev)
 //   safetyStock: 7.64,   // New: zScore * stdDev * sqrt(leadTime) (default zScore=1.65)
 //   reorderPoint: 64.78, // New: (avg * leadTime) + safetyStock (reuses logic)
-//   eoq: 288.86          // New: EOQ optimal qty (reuses avg; std formula)
+//   eoq: 239.05,         // New: EOQ optimal qty (reuses avg; 250 biz days)
+//   insights: {          // New: insights/ layer for human-readable summary/signals
+//     status: 'critical',
+//     summary: 'High stockout risk - act now to avoid shortages.',
+//     demandSignal: 'Demand stable around 11.43 units per day.',
+//     // ... variabilitySignal, bufferSignal, reorderSignal, costSignal, recommendation
+//   }
 // }
 
 // Or use individual utilities
 const avgDemand = calculateAverageDemand(historicalDemand);
 console.log(avgDemand); // 11.42857...
+
+// Standalone insights
+const insights = generateInsights(forecast);
+console.log(insights.summary); // Human-readable e.g., "High stockout risk..."
 
 /**
  * Note on consistent validation: All functions use defensive programming
@@ -83,9 +96,10 @@ console.log(avgDemand); // 11.42857...
  * - Demand variability & safety stock: calculateSafetyStock(historicalDemand, leadTime, [zScore=1.65], [avgDemand?])
  *   - Reuses avg for optimization; zScore rename (std stats); variance accumulates linearly (std dev scales with sqrt(time) → *sqrt(LeadTime) in formula).
  * - Reorder Point: calculateReorderPoint(historicalDemand, leadTime, [zScore=1.65]) reuses avg + safety; triggers orders in real systems.
- * - EOQ (new): calculateEOQ(historicalDemand, [orderCost=100], [holdingCost=10]) reuses avg for optimal qty `sqrt(2*annualD*S/H)` (annual=avg*250 business days for realism, excl. weekends/holidays); answers "how much to order".
- *   - Integrated into forecast (backward-compatible; adds ..., eoq).
- * Example output: ..., safetyStock: 7.64, reorderPoint: 64.78, eoq: 239.06
+ * - EOQ: calculateEOQ(historicalDemand, [orderCost=100], [holdingCost=10]) reuses avg for optimal qty `sqrt(2*annualD*S/H)` (annual=avg*250 business days for realism, excl. weekends/holidays); answers "how much to order".
+ * - Insights Layer (new): generateInsights(forecastData) in insights/ folder for human-readable status/summary/signals (demandSignal, bufferSignal etc.); final layer for decisions.
+ *   - Integrated into forecast (backward-compatible; adds insights).
+ * Example output: ..., safetyStock: 7.64, reorderPoint: 64.78, eoq: 239.05, insights: { status: 'critical', demandSignal: '...', ... }
  */
 ```
 

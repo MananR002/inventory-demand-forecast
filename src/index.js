@@ -4,26 +4,29 @@
  */
 
 // Import utility functions
-// Note: Each is in separate file to keep main index.js lean/clean per original structure
+// Note: Each is in separate file/folder to keep main index.js lean/clean per original structure
 // ReorderPoint/EOQ reuse avg/safety (avoids dup logic; modular)
-// detectStockoutRisk now exports RISK_LEVELS enum for better structure (magic string avoidance)
+// detectStockoutRisk exports RISK_LEVELS enum for better structure
+// insights/ folder for final human-readable layer
 const calculateAverageDemand = require('./calculateAverageDemand');
 const calculateDaysRemaining = require('./calculateDaysRemaining');
 const { detectStockoutRisk, RISK_LEVELS } = require('./detectStockoutRisk');
 const calculateSafetyStock = require('./calculateSafetyStock');
 const calculateReorderPoint = require('./calculateReorderPoint');
 const calculateEOQ = require('./calculateEOQ');
+const generateInsights = require('./insights/generateInsights');
 
 /**
  * Main function to calculate demand forecast and inventory risk.
  * All inputs are handled defensively for consistency (see utility functions for details):
  * - Invalid data returns safe defaults (e.g., avg=0, days=0, risk=RISK_LEVELS.LOW, safetyStock=0) instead of throwing.
- * Now extended with demand variability (std dev), safety stock, reorder point, and EOQ for full decisions.
+ * Now extended with demand variability (std dev), safety stock, reorder point, EOQ, and insights layer for full decisions.
  * Safety stock = Z * stdDev * sqrt(leadTime); Reorder Point = (avgDailyDemand * leadTime) + safetyStock.
  * EOQ = sqrt(2 * annualDemand * orderCost / holdingCost) (annual from avgDaily*250 business days for realism).
  * Z/zScore defaults to 1.65 (~95% service level) if not provided.
  * Now also reuses avgDailyDemand in safety stock calc for efficiency (no redundant mean computation).
  * RISK_LEVELS enum (from detectStockoutRisk) used for riskLevel to improve structure (no magic strings).
+ * Final insights/ layer generates human-readable summary/signals (status, demandSignal etc.).
  * This does NOT break existing output shape or calls (adds fields; optional param renamed to zScore for standard stats term).
  * @param {number[]} historicalDemand - Array of historical daily demand data.
  * @param {number} currentStock - Current stock level.
@@ -33,7 +36,8 @@ const calculateEOQ = require('./calculateEOQ');
  * @param {number} [holdingCost=10] - Optional holding cost per unit/year (H for EOQ).
  * @returns {Object} Forecast results (backward-compatible extension):
  *   - avgDailyDemand, daysRemaining, riskLevel, recommendation (original fields)
- *   - demandStdDev, safetyStock, reorderPoint, eoq (new; EOQ reuses avg logic)
+ *   - demandStdDev, safetyStock, reorderPoint, eoq (new)
+ *   - insights (final layer: status, summary, signals e.g., demandSignal)
  */
 function calculateInventoryForecast(historicalDemand, currentStock, leadTime, zScore = 1.65, orderCost = 100, holdingCost = 10) {
   // Existing calcs (unchanged for backward compat)
@@ -56,6 +60,10 @@ function calculateInventoryForecast(historicalDemand, currentStock, leadTime, zS
   // EOQ helps answer "how much to order" alongside "when" (reorderPoint)
   const { eoq } = calculateEOQ(historicalDemand, orderCost, holdingCost);
 
+  // Insights layer: human-readable summary/signals (final synthesis; in separate insights/ folder)
+  // Reuses full forecast data (status, demandSignal etc.); keeps main engine lean
+  const insights = generateInsights({ avgDailyDemand, demandStdDev, safetyStock, reorderPoint, eoq, riskLevel, daysRemaining });
+
   return {
     // Original fields preserved exactly (no breaking changes for consumers)
     avgDailyDemand: Number(avgDailyDemand.toFixed(2)), // Round for readability
@@ -63,17 +71,19 @@ function calculateInventoryForecast(historicalDemand, currentStock, leadTime, zS
     riskLevel,
     // Use enum for recommendation to align with RISK_LEVELS (improved structure)
     recommendation: riskLevel === RISK_LEVELS.HIGH ? 'Reorder immediately' : 'Monitor stock levels',
-    // New fields for extension (EOQ added last)
+    // New fields for extension (insights added last)
     demandStdDev,
     safetyStock,
     reorderPoint,
-    eoq
+    eoq,
+    insights
   };
 }
 
 // Export all functions and the main calculator
 // Individual utilities allow modular use; main func ties them for convenience
 // RISK_LEVELS enum re-exported for consumers (e.g., comparisons: risk === RISK_LEVELS.HIGH)
+// insights/ layer exported for readable reporting
 module.exports = {
   calculateAverageDemand,
   calculateDaysRemaining,
@@ -82,5 +92,6 @@ module.exports = {
   calculateSafetyStock,  // For std dev + safety stock
   calculateReorderPoint, // Reorder point reusing existing logic
   calculateEOQ,          // New: EOQ for order quantity (reuses avg)
+  generateInsights,      // Insights layer: human-readable signals/summary
   calculateInventoryForecast
 };

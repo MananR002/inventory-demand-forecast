@@ -6,6 +6,7 @@ const {
   calculateSafetyStock,  // For demand std dev + safety stock
   calculateReorderPoint, // Reorder point reusing avg + safety logic
   calculateEOQ,          // New: EOQ for order quantity (reuses avg)
+  generateInsights,      // Insights layer: human-readable signals/summary
   calculateInventoryForecast
 } = require('../src/index');
 
@@ -229,12 +230,58 @@ describe('Inventory Management System', () => {
     });
   });
 
+  /**
+   * Tests for insights layer: human-readable summary/signals in separate insights/ folder.
+   * Reuses forecast data for status, demandSignal etc.; final layer for readability.
+   * Backward compat (adds insights field).
+   */
+  describe('generateInsights', () => {
+    // Sample forecast data for insights (risk high → critical)
+    const sampleForecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime);
+
+    test('generates human-readable insights from forecast data', () => {
+      const insights = generateInsights(sampleForecast);
+      expect(insights.status).toBe('critical');  // High risk → critical
+      expect(insights.summary).toContain('High stockout risk');
+      expect(insights.demandSignal).toBe('Demand stable around 11.43 units per day.');
+      expect(insights.variabilitySignal).toBe('Moderate variability (plan buffer).');  // stdDev~2.07 >1
+      expect(insights.bufferSignal).toContain('Safety stock protects');  // e.g., ~0.7 days
+      expect(insights.reorderSignal).toContain('Reorder triggered at');
+      expect(insights.costSignal).toContain('EOQ of');
+      expect(insights.recommendation).toBe('Reorder immediately and review suppliers.');
+    });
+
+    test('handles invalid forecast data defensively', () => {
+      const insights = generateInsights(null);
+      expect(insights.status).toBe('unknown');
+      expect(insights.summary).toBe('Insufficient data for insights.');
+      expect(insights.recommendation).toBe('Gather more data.');
+    });
+
+    test('medium risk yields caution status', () => {
+      // Simulate med risk forecast (daysRemaining ~6-7.5 for lead=5)
+      const medForecast = { ...sampleForecast, riskLevel: RISK_LEVELS.MEDIUM, daysRemaining: 6.5 };
+      const insights = generateInsights(medForecast);
+      expect(insights.status).toBe('caution');
+      expect(insights.recommendation).toBe('Plan reorder soon.');
+    });
+
+    // Additional test for high variability branch (covers uncovered if >3)
+    // Ensures full cov and realistic signal
+    test('high variability signal', () => {
+      const highVarForecast = { ...sampleForecast, demandStdDev: 4 };
+      const insights = generateInsights(highVarForecast);
+      expect(insights.variabilitySignal).toBe('High variability - monitor closely for stockouts.');
+    });
+  });
+
   describe('calculateInventoryForecast', () => {
     test('computes full forecast for sample data', () => {
       // Backward compat test: call with original 3 args (uses default zScore=1.65, cost defaults)
       // Original fields unchanged; new fields added for full extension (EOQ now uses 250 business days)
       // Internally reuses avgDailyDemand in safety/reorder/EOQ utils (no dup logic)
       // riskLevel uses RISK_LEVELS enum (improved structure)
+      // Insights layer (insights/ folder) synthesizes to human-readable signals
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime);
       // Note: avgDailyDemand = 80/7 ≈11.4286 →11.43; daysRemaining=50/11.4286≈4.375→4.38
       expect(forecast.avgDailyDemand).toBe(11.43);
@@ -246,6 +293,11 @@ describe('Inventory Management System', () => {
       expect(forecast.safetyStock).toBeCloseTo(7.64, 2);   // Default zScore=1.65 (JS rounding)
       expect(forecast.reorderPoint).toBeCloseTo(64.78, 2);  // (avg*leadTime) + safety ≈64.78; reorderPoint reuse
       expect(forecast.eoq).toBeCloseTo(239.05, 2);  // EOQ with 250 biz days ~239.05; reuses avg (realism update)
+      // Insights field (human-readable; from insights/ layer)
+      expect(forecast.insights).toBeDefined();
+      expect(forecast.insights.status).toBe('critical');
+      expect(forecast.insights.demandSignal).toContain('Demand stable around');
+      expect(forecast.insights.recommendation).toContain('Reorder immediately');
     });
 
     // New test: forecast with custom zScore (still backward compat for old calls)
@@ -276,12 +328,12 @@ describe('Inventory Management System', () => {
       expect(forecast.daysRemaining).toBe('Infinite');
     });
 
-    // Updated for EOQ extension: main forecast now includes eoq
+    // Updated for insights layer: main forecast now includes insights field
     // but gracefully handles invalid inputs defensively (no throws, safe defaults)
     // Original shape/behavior preserved for consumers; reuses utils internally
-    // riskLevel from RISK_LEVELS enum
+    // riskLevel from RISK_LEVELS enum; insights/ folder generates readable signals
     test('handles invalid inputs defensively in full forecast', () => {
-      const forecast = calculateInventoryForecast('invalid', -10, -5);  // Triggers avg=0, days=0, risk=low, safety=0, reorder=0, eoq=0
+      const forecast = calculateInventoryForecast('invalid', -10, -5);  // Triggers avg=0, days=0, risk=low, safety=0, reorder=0, eoq=0, insights=default
       expect(forecast.avgDailyDemand).toBe(0);
       expect(forecast.daysRemaining).toBe(0);  // From calculateDaysRemaining
       expect(forecast.riskLevel).toBe(RISK_LEVELS.LOW);  // From detectStockoutRisk enum
@@ -291,6 +343,9 @@ describe('Inventory Management System', () => {
       expect(forecast.safetyStock).toBe(0);
       expect(forecast.reorderPoint).toBe(0);
       expect(forecast.eoq).toBe(0);
+      // Insights field defaults safely
+      expect(forecast.insights.status).toBe('unknown');
+      expect(forecast.insights.summary).toBe('Insufficient data for insights.');
     });
   });
 });
