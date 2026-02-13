@@ -2,7 +2,8 @@ const {
   calculateAverageDemand,
   calculateDaysRemaining,
   detectStockoutRisk,
-  calculateSafetyStock,  // New utility for demand std dev + safety stock
+  calculateSafetyStock,  // For demand std dev + safety stock
+  calculateReorderPoint, // New: reorder point reusing avg + safety logic
   calculateInventoryForecast
 } = require('../src/index');
 
@@ -145,11 +146,47 @@ describe('Inventory Management System', () => {
     });
   });
 
+  /**
+   * Tests for reorder point extension: reorderPoint = (avgDemand * leadTime) + safetyStock.
+   * Reuses avg + safety utils (avoids dup); separate utility for structure.
+   * Teams monitor this in real systems to trigger orders.
+   */
+  describe('calculateReorderPoint', () => {
+    // Uses top-level samples: avg~11.43, safety~7.64 (z=1.65), reorder~64.79
+    test('computes reorder point reusing existing logic (default zScore=1.65)', () => {
+      // Reuses avg (~11.43) + safety (~7.64); reorder = avg*lead + safety
+      // Note: JS rounding (11.42857*5 + 7.64 = 64.78285 →64.78)
+      const result = calculateReorderPoint(sampleHistoricalDemand, sampleLeadTime);
+      expect(result.avgDailyDemand).toBe(11.43);
+      expect(result.safetyStock).toBeCloseTo(7.64, 2);
+      expect(result.reorderPoint).toBeCloseTo(64.78, 2);
+    });
+
+    test('uses custom zScore for reorder point', () => {
+      // Reuses safety with z=2.33 (~10.79); reorder ~67.93 due to rounding
+      const result = calculateReorderPoint(sampleHistoricalDemand, sampleLeadTime, 2.33);
+      expect(result.safetyStock).toBeCloseTo(10.79, 2);
+      expect(result.reorderPoint).toBeCloseTo(67.93, 2);
+    });
+
+    test('returns zeros for invalid/empty/negative inputs (defensive, consistent)', () => {
+      expect(calculateReorderPoint([], 5)).toEqual({ avgDailyDemand: 0, safetyStock: 0, reorderPoint: 0 });
+      expect(calculateReorderPoint('invalid', 5)).toEqual({ avgDailyDemand: 0, safetyStock: 0, reorderPoint: 0 });
+      expect(calculateReorderPoint(sampleHistoricalDemand, -1)).toEqual({ avgDailyDemand: 0, safetyStock: 0, reorderPoint: 0 });
+      expect(calculateReorderPoint(sampleHistoricalDemand, 5, -1)).toEqual({ avgDailyDemand: 0, safetyStock: 0, reorderPoint: 0 });
+    });
+
+    test('handles single data point (avg=10, safety=0 → reorder=50)', () => {
+      // leadTime=5, reorder = 10*5 + 0 = 50
+      expect(calculateReorderPoint([10], 5)).toEqual({ avgDailyDemand: 10, safetyStock: 0, reorderPoint: 50 });
+    });
+  });
+
   describe('calculateInventoryForecast', () => {
     test('computes full forecast for sample data', () => {
       // Backward compat test: call with original 3 args (uses default zScore=1.65)
-      // Original fields unchanged; new fields added for safety stock extension
-      // Internally reuses avgDailyDemand in safety stock calc (optimization)
+      // Original fields unchanged; new fields added for safety/reorder extension
+      // Internally reuses avgDailyDemand in safety + reorder utils (no dup logic)
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime);
       // Note: avgDailyDemand = 80/7 ≈11.4286 →11.43; daysRemaining=50/11.4286≈4.375→4.38
       expect(forecast.avgDailyDemand).toBe(11.43);
@@ -159,6 +196,7 @@ describe('Inventory Management System', () => {
       // New fields (do not break shape)
       expect(forecast.demandStdDev).toBe(2.07);  // From safety stock utility
       expect(forecast.safetyStock).toBeCloseTo(7.64, 2);   // Default zScore=1.65 (JS rounding)
+      expect(forecast.reorderPoint).toBeCloseTo(64.78, 2);  // (avg*leadTime) + safety ≈64.78; reorderPoint reuse
     });
 
     // New test: forecast with custom zScore (still backward compat for old calls)
@@ -166,6 +204,7 @@ describe('Inventory Management System', () => {
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime, 2.33);
       expect(forecast.demandStdDev).toBe(2.07);
       expect(forecast.safetyStock).toBeCloseTo(10.79, 2);  // Custom zScore (JS rounding)
+      expect(forecast.reorderPoint).toBeCloseTo(67.93, 2);  // (avg*leadTime) + custom safety
       // Original fields unchanged
       expect(forecast.riskLevel).toBe('high');
     });
@@ -176,18 +215,19 @@ describe('Inventory Management System', () => {
       expect(forecast.daysRemaining).toBe('Infinite');
     });
 
-    // Updated for safety stock extension: main forecast now includes new fields
+    // Updated for reorder point extension: main forecast now includes reorderPoint
     // but gracefully handles invalid inputs defensively (no throws, safe defaults)
-    // Original shape/behavior preserved for consumers
+    // Original shape/behavior preserved for consumers; reuses utils internally
     test('handles invalid inputs defensively in full forecast', () => {
-      const forecast = calculateInventoryForecast('invalid', -10, -5);  // Triggers avg=0, days=0, risk=low, safety=0
+      const forecast = calculateInventoryForecast('invalid', -10, -5);  // Triggers avg=0, days=0, risk=low, safety=0, reorder=0
       expect(forecast.avgDailyDemand).toBe(0);
       expect(forecast.daysRemaining).toBe(0);  // From calculateDaysRemaining
       expect(forecast.riskLevel).toBe('low');  // From detectStockoutRisk
       expect(forecast.recommendation).toBe('Monitor stock levels');
-      // New fields default safely
+      // New fields default safely (reorderPoint reuse)
       expect(forecast.demandStdDev).toBe(0);
       expect(forecast.safetyStock).toBe(0);
+      expect(forecast.reorderPoint).toBe(0);
     });
   });
 });

@@ -7,7 +7,8 @@ A Node.js utility library for calculating forecast demand and inventory risk. Fo
 - **Simple Moving Average**: Calculate average daily demand from historical data.
 - **Days of Inventory Remaining**: Estimate how many days before stock runs out.
 - **Stockout Risk Detection**: Identify risk levels based on lead time.
-- **Demand Variability & Safety Stock** (new): Std dev of demand + formula `Z * stdDev * sqrt(LeadTime)` (default Z=1.65 ~95% service; renamed param zScore for std stats term). Reuse avg demand for efficiency.
+- **Demand Variability & Safety Stock**: Std dev of demand + formula `Z * stdDev * sqrt(LeadTime)` (default Z=1.65 ~95% service; renamed param zScore; reuses avg demand for efficiency).
+- **Reorder Point** (new): (Avg demand * lead time) + safety stock; reuses existing logic (no dup); what teams monitor to trigger orders.
 - Clean, modular design with separate utility functions (keeps main files lean).
 - Comprehensive test coverage (100%).
 
@@ -20,7 +21,8 @@ inventory-management-system/
 │   ├── calculateAverageDemand.js # Computes avg daily demand
 │   ├── calculateDaysRemaining.js # Estimates days of stock left
 │   ├── detectStockoutRisk.js     # Assesses stockout risk
-│   └── calculateSafetyStock.js   # New: demand std dev + safety stock formula
+│   ├── calculateSafetyStock.js   # Demand std dev + safety stock formula (reuses avg)
+│   └── calculateReorderPoint.js  # New: reorder point reusing avg + safety (no dup logic)
 ├── tests/
 │   └── inventory.test.js         # Jest tests with sample data
 ├── jest.config.js                # Jest configuration
@@ -59,7 +61,8 @@ console.log(forecast);
 //   riskLevel: 'high',
 //   recommendation: 'Reorder immediately',
 //   demandStdDev: 2.07,  // New: demand variability (std dev)
-//   safetyStock: 7.64    // New: zScore * stdDev * sqrt(leadTime) (default zScore=1.65)
+//   safetyStock: 7.64,   // New: zScore * stdDev * sqrt(leadTime) (default zScore=1.65)
+//   reorderPoint: 64.79  // New: (avg * leadTime) + safetyStock (reuses logic)
 // }
 
 // Or use individual utilities
@@ -72,12 +75,12 @@ console.log(avgDemand); // 11.42857...
  * This makes the library robust for real-world messy data (e.g., no crashes in
  * calculateInventoryForecast([null], -1, 'invalid') → safe output).
  *
- * Demand variability & safety stock extension:
- * - calculateSafetyStock(historicalDemand, leadTime, [zScore=1.65], [avgDemand?]) - reuse avg
- *   for optimization; param renamed to zScore (standard stats); variance note: accumulates
- *   linearly over time (std dev scales with sqrt(time) → *sqrt(LeadTime) in formula).
- * - Integrated into forecast (backward-compatible; adds demandStdDev, safetyStock).
- * Example output: ..., demandStdDev: 2.07, safetyStock: 7.64
+ * Extensions:
+ * - Demand variability & safety stock: calculateSafetyStock(historicalDemand, leadTime, [zScore=1.65], [avgDemand?])
+ *   - Reuses avg for optimization; zScore rename (std stats); variance accumulates linearly (std dev scales with sqrt(time) → *sqrt(LeadTime)).
+ * - Reorder Point (new): calculateReorderPoint(historicalDemand, leadTime, [zScore=1.65]) reuses avg + safety (no dup logic); triggers orders in real systems.
+ *   - Integrated into forecast (backward-compatible; adds ..., reorderPoint).
+ * Example output: ..., demandStdDev: 2.07, safetyStock: 7.64, reorderPoint: 64.79
  */
 ```
 
