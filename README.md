@@ -8,7 +8,8 @@ A Node.js utility library for calculating forecast demand and inventory risk. Fo
 - **Days of Inventory Remaining**: Estimate how many days before stock runs out.
 - **Stockout Risk Detection**: Identify risk levels based on lead time.
 - **Demand Variability & Safety Stock**: Std dev of demand + formula `Z * stdDev * sqrt(LeadTime)` (default Z=1.65 ~95% service; renamed param zScore; reuses avg demand for efficiency).
-- **Reorder Point** (new): (Avg demand * lead time) + safety stock; reuses existing logic (no dup); what teams monitor to trigger orders.
+- **Reorder Point**: (Avg demand * lead time) + safety stock; reuses existing logic (no dup); what teams monitor to trigger orders.
+- **Economic Order Quantity (EOQ)** (new): Optimal order qty via std formula `sqrt(2 * annualDemand * orderCost / holdingCost)` (annual from avgDaily*365; reuses avg; separate utility for "how much to order").
 - Clean, modular design with separate utility functions (keeps main files lean).
 - Comprehensive test coverage (100%).
 
@@ -22,7 +23,8 @@ inventory-management-system/
 │   ├── calculateDaysRemaining.js # Estimates days of stock left
 │   ├── detectStockoutRisk.js     # Assesses stockout risk
 │   ├── calculateSafetyStock.js   # Demand std dev + safety stock formula (reuses avg)
-│   └── calculateReorderPoint.js  # New: reorder point reusing avg + safety (no dup logic)
+│   ├── calculateReorderPoint.js  # Reorder point reusing avg + safety (no dup)
+│   └── calculateEOQ.js           # New: EOQ for order qty (reuses avg; std formula)
 ├── tests/
 │   └── inventory.test.js         # Jest tests with sample data
 ├── jest.config.js                # Jest configuration
@@ -62,7 +64,8 @@ console.log(forecast);
 //   recommendation: 'Reorder immediately',
 //   demandStdDev: 2.07,  // New: demand variability (std dev)
 //   safetyStock: 7.64,   // New: zScore * stdDev * sqrt(leadTime) (default zScore=1.65)
-//   reorderPoint: 64.79  // New: (avg * leadTime) + safetyStock (reuses logic)
+//   reorderPoint: 64.78, // New: (avg * leadTime) + safetyStock (reuses logic)
+//   eoq: 288.86          // New: EOQ optimal qty (reuses avg; std formula)
 // }
 
 // Or use individual utilities
@@ -75,12 +78,13 @@ console.log(avgDemand); // 11.42857...
  * This makes the library robust for real-world messy data (e.g., no crashes in
  * calculateInventoryForecast([null], -1, 'invalid') → safe output).
  *
- * Extensions:
+ * Extensions (all reuse avg/safety logic; no dup):
  * - Demand variability & safety stock: calculateSafetyStock(historicalDemand, leadTime, [zScore=1.65], [avgDemand?])
- *   - Reuses avg for optimization; zScore rename (std stats); variance accumulates linearly (std dev scales with sqrt(time) → *sqrt(LeadTime)).
- * - Reorder Point (new): calculateReorderPoint(historicalDemand, leadTime, [zScore=1.65]) reuses avg + safety (no dup logic); triggers orders in real systems.
- *   - Integrated into forecast (backward-compatible; adds ..., reorderPoint).
- * Example output: ..., demandStdDev: 2.07, safetyStock: 7.64, reorderPoint: 64.79
+ *   - Reuses avg for optimization; zScore rename (std stats); variance accumulates linearly (std dev scales with sqrt(time) → *sqrt(LeadTime) in formula).
+ * - Reorder Point: calculateReorderPoint(historicalDemand, leadTime, [zScore=1.65]) reuses avg + safety; triggers orders in real systems.
+ * - EOQ (new): calculateEOQ(historicalDemand, [orderCost=100], [holdingCost=10]) reuses avg for optimal qty `sqrt(2*annualD*S/H)` (annual=avg*365); answers "how much to order".
+ *   - Integrated into forecast (backward-compatible; adds ..., eoq).
+ * Example output: ..., safetyStock: 7.64, reorderPoint: 64.78, eoq: 288.86
  */
 ```
 

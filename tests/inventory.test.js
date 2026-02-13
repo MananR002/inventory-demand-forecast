@@ -3,7 +3,8 @@ const {
   calculateDaysRemaining,
   detectStockoutRisk,
   calculateSafetyStock,  // For demand std dev + safety stock
-  calculateReorderPoint, // New: reorder point reusing avg + safety logic
+  calculateReorderPoint, // Reorder point reusing avg + safety logic
+  calculateEOQ,          // New: EOQ for order quantity (reuses avg)
   calculateInventoryForecast
 } = require('../src/index');
 
@@ -182,11 +183,48 @@ describe('Inventory Management System', () => {
     });
   });
 
+  /**
+   * Tests for EOQ extension: optimal order quantity sqrt(2*annualD*S/H).
+   * Reuses avgDailyDemand (annual = avg*365); separate utility.
+   * Helps decide "how much to order" (with reorder point for "when").
+   */
+  describe('calculateEOQ', () => {
+    // Sample: avg~11.43 *365 =4171.43; S=100, H=10 → EOQ=sqrt(2*4171.43*100/10)≈288.84 (JS float)
+    // Reuses avgDailyDemand internally
+    test('computes EOQ reusing avg demand (default costs)', () => {
+      const result = calculateEOQ(sampleHistoricalDemand);
+      expect(result.annualDemand).toBeCloseTo(4171.43, 2);  // 11.43*365
+      expect(result.eoq).toBeCloseTo(288.84, 2);
+    });
+
+    test('uses custom orderCost/holdingCost', () => {
+      // e.g., S=50, H=20 (ratio=2.5 changes EOQ to ~144.42; avoids same-ratio as defaults)
+      const result = calculateEOQ(sampleHistoricalDemand, 50, 20);
+      expect(result.eoq).toBeCloseTo(144.42, 2);
+    });
+
+    test('returns zeros for invalid/zero/negative costs or demand (defensive)', () => {
+      expect(calculateEOQ([], 100, 10)).toEqual({ annualDemand: 0, eoq: 0 });
+      expect(calculateEOQ('invalid', 100, 10)).toEqual({ annualDemand: 0, eoq: 0 });
+      expect(calculateEOQ(sampleHistoricalDemand, -100, 10)).toEqual({ annualDemand: 0, eoq: 0 });
+      expect(calculateEOQ(sampleHistoricalDemand, 100, 0)).toEqual({ annualDemand: 0, eoq: 0 });
+      // Zero demand case
+      expect(calculateEOQ([0, 0], 100, 10)).toEqual({ annualDemand: 0, eoq: 0 });
+    });
+
+    test('handles single data point (e.g., avg=10*365=3650, EOQ~270.19)', () => {
+      // Reuses avg=10
+      const result = calculateEOQ([10], 100, 10);
+      expect(result.annualDemand).toBe(3650);
+      expect(result.eoq).toBeCloseTo(270.19, 2);
+    });
+  });
+
   describe('calculateInventoryForecast', () => {
     test('computes full forecast for sample data', () => {
-      // Backward compat test: call with original 3 args (uses default zScore=1.65)
-      // Original fields unchanged; new fields added for safety/reorder extension
-      // Internally reuses avgDailyDemand in safety + reorder utils (no dup logic)
+      // Backward compat test: call with original 3 args (uses default zScore=1.65, cost defaults)
+      // Original fields unchanged; new fields added for full extension (EOQ reuses avg)
+      // Internally reuses avgDailyDemand in safety/reorder/EOQ utils (no dup logic)
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime);
       // Note: avgDailyDemand = 80/7 ≈11.4286 →11.43; daysRemaining=50/11.4286≈4.375→4.38
       expect(forecast.avgDailyDemand).toBe(11.43);
@@ -197,6 +235,7 @@ describe('Inventory Management System', () => {
       expect(forecast.demandStdDev).toBe(2.07);  // From safety stock utility
       expect(forecast.safetyStock).toBeCloseTo(7.64, 2);   // Default zScore=1.65 (JS rounding)
       expect(forecast.reorderPoint).toBeCloseTo(64.78, 2);  // (avg*leadTime) + safety ≈64.78; reorderPoint reuse
+      expect(forecast.eoq).toBeCloseTo(288.84, 2);  // EOQ with defaults ~288.84; reuses avg
     });
 
     // New test: forecast with custom zScore (still backward compat for old calls)
@@ -205,7 +244,19 @@ describe('Inventory Management System', () => {
       expect(forecast.demandStdDev).toBe(2.07);
       expect(forecast.safetyStock).toBeCloseTo(10.79, 2);  // Custom zScore (JS rounding)
       expect(forecast.reorderPoint).toBeCloseTo(67.93, 2);  // (avg*leadTime) + custom safety
+      expect(forecast.eoq).toBeCloseTo(288.84, 2);  // EOQ unaffected by zScore (uses avg only)
       // Original fields unchanged
+      expect(forecast.riskLevel).toBe('high');
+    });
+
+    // New test: forecast with custom order/holding costs for EOQ (back compat)
+    test('computes forecast with custom EOQ costs', () => {
+      // Positions: zScore default, then orderCost=50, holdingCost=20 (ratio=2.5 → EOQ~144.42)
+      // Old calls unaffected (uses cost defaults); reuses avg in EOQ util
+      const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime, 1.65, 50, 20);
+      expect(forecast.eoq).toBeCloseTo(144.42, 2);  // EOQ with adjusted costs
+      // Other fields unchanged
+      expect(forecast.reorderPoint).toBeCloseTo(64.78, 2);
       expect(forecast.riskLevel).toBe('high');
     });
 
@@ -215,19 +266,20 @@ describe('Inventory Management System', () => {
       expect(forecast.daysRemaining).toBe('Infinite');
     });
 
-    // Updated for reorder point extension: main forecast now includes reorderPoint
+    // Updated for EOQ extension: main forecast now includes eoq
     // but gracefully handles invalid inputs defensively (no throws, safe defaults)
     // Original shape/behavior preserved for consumers; reuses utils internally
     test('handles invalid inputs defensively in full forecast', () => {
-      const forecast = calculateInventoryForecast('invalid', -10, -5);  // Triggers avg=0, days=0, risk=low, safety=0, reorder=0
+      const forecast = calculateInventoryForecast('invalid', -10, -5);  // Triggers avg=0, days=0, risk=low, safety=0, reorder=0, eoq=0
       expect(forecast.avgDailyDemand).toBe(0);
       expect(forecast.daysRemaining).toBe(0);  // From calculateDaysRemaining
       expect(forecast.riskLevel).toBe('low');  // From detectStockoutRisk
       expect(forecast.recommendation).toBe('Monitor stock levels');
-      // New fields default safely (reorderPoint reuse)
+      // New fields default safely (EOQ/reorder reuse)
       expect(forecast.demandStdDev).toBe(0);
       expect(forecast.safetyStock).toBe(0);
       expect(forecast.reorderPoint).toBe(0);
+      expect(forecast.eoq).toBe(0);
     });
   });
 });
