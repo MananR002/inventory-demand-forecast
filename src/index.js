@@ -19,7 +19,7 @@ const calculateEOQ = require('./calculateEOQ');
  * - Invalid data returns safe defaults (e.g., avg=0, days=0, risk='low', safetyStock=0) instead of throwing.
  * Now extended with demand variability (std dev), safety stock, reorder point, and EOQ for full decisions.
  * Safety stock = Z * stdDev * sqrt(leadTime); Reorder Point = (avgDailyDemand * leadTime) + safetyStock.
- * EOQ = sqrt(2 * annualDemand * orderCost / holdingCost) (annual from avgDaily*365).
+ * EOQ = sqrt(2 * annualDemand * orderCost / holdingCost) (annual from avgDaily*250 business days for realism).
  * Z/zScore defaults to 1.65 (~95% service level) if not provided.
  * Now also reuses avgDailyDemand in safety stock calc for efficiency (no redundant mean computation).
  * This does NOT break existing output shape or calls (adds fields; optional param renamed to zScore for standard stats term).

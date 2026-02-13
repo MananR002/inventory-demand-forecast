@@ -185,22 +185,23 @@ describe('Inventory Management System', () => {
 
   /**
    * Tests for EOQ extension: optimal order quantity sqrt(2*annualD*S/H).
-   * Reuses avgDailyDemand (annual = avg*365); separate utility.
+   * Reuses avgDailyDemand (annual now defaults to avg*250 business days for realism); separate utility.
    * Helps decide "how much to order" (with reorder point for "when").
+   * daysPerYear=250 excludes weekends/holidays (improves model accuracy).
    */
   describe('calculateEOQ', () => {
-    // Sample: avg~11.43 *365 =4171.43; S=100, H=10 → EOQ=sqrt(2*4171.43*100/10)≈288.84 (JS float)
-    // Reuses avgDailyDemand internally
-    test('computes EOQ reusing avg demand (default costs)', () => {
+    // Sample: avg~11.43 *250 =2857.1425 →2857.14 (toFixed); S=100, H=10 → EOQ~239.05 (JS float)
+    // Reuses avgDailyDemand internally; 250 biz days for realism
+    test('computes EOQ reusing avg demand (default costs, 250 business days)', () => {
       const result = calculateEOQ(sampleHistoricalDemand);
-      expect(result.annualDemand).toBeCloseTo(4171.43, 2);  // 11.43*365
-      expect(result.eoq).toBeCloseTo(288.84, 2);
+      expect(result.annualDemand).toBeCloseTo(2857.14, 2);  // 11.43*250
+      expect(result.eoq).toBeCloseTo(239.05, 2);
     });
 
     test('uses custom orderCost/holdingCost', () => {
-      // e.g., S=50, H=20 (ratio=2.5 changes EOQ to ~144.42; avoids same-ratio as defaults)
+      // e.g., S=50, H=20 (ratio=2.5 changes EOQ to ~119.52; avoids same-ratio as defaults)
       const result = calculateEOQ(sampleHistoricalDemand, 50, 20);
-      expect(result.eoq).toBeCloseTo(144.42, 2);
+      expect(result.eoq).toBeCloseTo(119.52, 2);
     });
 
     test('returns zeros for invalid/zero/negative costs or demand (defensive)', () => {
@@ -212,18 +213,18 @@ describe('Inventory Management System', () => {
       expect(calculateEOQ([0, 0], 100, 10)).toEqual({ annualDemand: 0, eoq: 0 });
     });
 
-    test('handles single data point (e.g., avg=10*365=3650, EOQ~270.19)', () => {
-      // Reuses avg=10
+    test('handles single data point (e.g., avg=10*250=2500, EOQ~223.61)', () => {
+      // Reuses avg=10; business days=250
       const result = calculateEOQ([10], 100, 10);
-      expect(result.annualDemand).toBe(3650);
-      expect(result.eoq).toBeCloseTo(270.19, 2);
+      expect(result.annualDemand).toBe(2500);
+      expect(result.eoq).toBeCloseTo(223.61, 2);
     });
   });
 
   describe('calculateInventoryForecast', () => {
     test('computes full forecast for sample data', () => {
       // Backward compat test: call with original 3 args (uses default zScore=1.65, cost defaults)
-      // Original fields unchanged; new fields added for full extension (EOQ reuses avg)
+      // Original fields unchanged; new fields added for full extension (EOQ now uses 250 business days)
       // Internally reuses avgDailyDemand in safety/reorder/EOQ utils (no dup logic)
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime);
       // Note: avgDailyDemand = 80/7 ≈11.4286 →11.43; daysRemaining=50/11.4286≈4.375→4.38
@@ -235,7 +236,7 @@ describe('Inventory Management System', () => {
       expect(forecast.demandStdDev).toBe(2.07);  // From safety stock utility
       expect(forecast.safetyStock).toBeCloseTo(7.64, 2);   // Default zScore=1.65 (JS rounding)
       expect(forecast.reorderPoint).toBeCloseTo(64.78, 2);  // (avg*leadTime) + safety ≈64.78; reorderPoint reuse
-      expect(forecast.eoq).toBeCloseTo(288.84, 2);  // EOQ with defaults ~288.84; reuses avg
+      expect(forecast.eoq).toBeCloseTo(239.05, 2);  // EOQ with 250 biz days ~239.05; reuses avg (realism update)
     });
 
     // New test: forecast with custom zScore (still backward compat for old calls)
@@ -244,17 +245,17 @@ describe('Inventory Management System', () => {
       expect(forecast.demandStdDev).toBe(2.07);
       expect(forecast.safetyStock).toBeCloseTo(10.79, 2);  // Custom zScore (JS rounding)
       expect(forecast.reorderPoint).toBeCloseTo(67.93, 2);  // (avg*leadTime) + custom safety
-      expect(forecast.eoq).toBeCloseTo(288.84, 2);  // EOQ unaffected by zScore (uses avg only)
+      expect(forecast.eoq).toBeCloseTo(239.05, 2);  // EOQ unaffected by zScore (uses avg + 250 biz days)
       // Original fields unchanged
       expect(forecast.riskLevel).toBe('high');
     });
 
     // New test: forecast with custom order/holding costs for EOQ (back compat)
     test('computes forecast with custom EOQ costs', () => {
-      // Positions: zScore default, then orderCost=50, holdingCost=20 (ratio=2.5 → EOQ~144.42)
-      // Old calls unaffected (uses cost defaults); reuses avg in EOQ util
+      // Positions: zScore default, then orderCost=50, holdingCost=20 (ratio=2.5 → EOQ~119.52)
+      // Old calls unaffected (uses cost defaults); reuses avg in EOQ util (250 biz days)
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime, 1.65, 50, 20);
-      expect(forecast.eoq).toBeCloseTo(144.42, 2);  // EOQ with adjusted costs
+      expect(forecast.eoq).toBeCloseTo(119.52, 2);  // EOQ with adjusted costs
       // Other fields unchanged
       expect(forecast.reorderPoint).toBeCloseTo(64.78, 2);
       expect(forecast.riskLevel).toBe('high');

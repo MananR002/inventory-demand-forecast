@@ -9,7 +9,7 @@ A Node.js utility library for calculating forecast demand and inventory risk. Fo
 - **Stockout Risk Detection**: Identify risk levels based on lead time.
 - **Demand Variability & Safety Stock**: Std dev of demand + formula `Z * stdDev * sqrt(LeadTime)` (default Z=1.65 ~95% service; renamed param zScore; reuses avg demand for efficiency).
 - **Reorder Point**: (Avg demand * lead time) + safety stock; reuses existing logic (no dup); what teams monitor to trigger orders.
-- **Economic Order Quantity (EOQ)** (new): Optimal order qty via std formula `sqrt(2 * annualDemand * orderCost / holdingCost)` (annual from avgDaily*365; reuses avg; separate utility for "how much to order").
+- **Economic Order Quantity (EOQ)** (new): Optimal order qty via std formula `sqrt(2 * annualDemand * orderCost / holdingCost)` (annual from avgDaily*250 business days for realism; reuses avg; separate utility for "how much to order").
 - Clean, modular design with separate utility functions (keeps main files lean).
 - Comprehensive test coverage (100%).
 
@@ -82,9 +82,9 @@ console.log(avgDemand); // 11.42857...
  * - Demand variability & safety stock: calculateSafetyStock(historicalDemand, leadTime, [zScore=1.65], [avgDemand?])
  *   - Reuses avg for optimization; zScore rename (std stats); variance accumulates linearly (std dev scales with sqrt(time) → *sqrt(LeadTime) in formula).
  * - Reorder Point: calculateReorderPoint(historicalDemand, leadTime, [zScore=1.65]) reuses avg + safety; triggers orders in real systems.
- * - EOQ (new): calculateEOQ(historicalDemand, [orderCost=100], [holdingCost=10]) reuses avg for optimal qty `sqrt(2*annualD*S/H)` (annual=avg*365); answers "how much to order".
+ * - EOQ (new): calculateEOQ(historicalDemand, [orderCost=100], [holdingCost=10]) reuses avg for optimal qty `sqrt(2*annualD*S/H)` (annual=avg*250 business days for realism, excl. weekends/holidays); answers "how much to order".
  *   - Integrated into forecast (backward-compatible; adds ..., eoq).
- * Example output: ..., safetyStock: 7.64, reorderPoint: 64.78, eoq: 288.86
+ * Example output: ..., safetyStock: 7.64, reorderPoint: 64.78, eoq: 239.06
  */
 ```
 
