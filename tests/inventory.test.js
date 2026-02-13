@@ -2,6 +2,7 @@ const {
   calculateAverageDemand,
   calculateDaysRemaining,
   detectStockoutRisk,
+  calculateSafetyStock,  // New utility for demand std dev + safety stock
   calculateInventoryForecast
 } = require('../src/index');
 
@@ -92,14 +93,69 @@ describe('Inventory Management System', () => {
     });
   });
 
+  /**
+   * New tests for safety stock extension (demand variability + formula).
+   * Ensures folder structure (separate utility) and backward compat.
+   * Uses top-level sample data for DRY.
+   */
+  describe('calculateSafetyStock', () => {
+    // Sample data for std dev / safety tests (aligns with other sample data)
+    // mean ≈11.43, sample stdDev ≈2.07 (var=25.81/6≈4.30)
+    // sampleLeadTime from top-level scope
+
+
+    test('computes demand std dev and safety stock with default Z=1.65', () => {
+      // demandStdDev uses sample std dev (precise calc: ~2.0744 →2.07)
+      // safetyStock = 1.65 * ~2.0744 * sqrt(5) ≈7.635 →7.64 (JS toFixed rounding)
+      const result = calculateSafetyStock(sampleHistoricalDemand, sampleLeadTime);
+      expect(result.demandStdDev).toBe(2.07);
+      expect(result.safetyStock).toBeCloseTo(7.64, 2);  // Flexible for float rounding
+    });
+
+    test('uses custom serviceLevelZ (e.g., for different service levels)', () => {
+      // ~99% Z; expect close for safetyStock rounding
+      const result = calculateSafetyStock(sampleHistoricalDemand, sampleLeadTime, 2.33);  // ~99% Z
+      expect(result.demandStdDev).toBe(2.07);
+      expect(result.safetyStock).toBeCloseTo(10.79, 2);
+    });
+
+    test('returns zeros for invalid/empty/negative inputs (defensive consistency)', () => {
+      // [] hits outer array check
+      expect(calculateSafetyStock([], 5)).toEqual({ demandStdDev: 0, safetyStock: 0 });
+      // Non-empty but all invalid hits inner n===0 (covers uncovered branch)
+      expect(calculateSafetyStock([-1, 'bad', null], 5)).toEqual({ demandStdDev: 0, safetyStock: 0 });
+      expect(calculateSafetyStock('invalid', 5)).toEqual({ demandStdDev: 0, safetyStock: 0 });
+      expect(calculateSafetyStock(sampleHistoricalDemand, -1)).toEqual({ demandStdDev: 0, safetyStock: 0 });
+      expect(calculateSafetyStock(sampleHistoricalDemand, 5, -1)).toEqual({ demandStdDev: 0, safetyStock: 0 });
+    });
+
+    test('handles single data point (stdDev=0, no variability)', () => {
+      expect(calculateSafetyStock([10], 5)).toEqual({ demandStdDev: 0, safetyStock: 0 });
+    });
+  });
+
   describe('calculateInventoryForecast', () => {
     test('computes full forecast for sample data', () => {
+      // Backward compat test: call with original 3 args (uses default Z=1.65)
+      // Original fields unchanged; new fields added for safety stock extension
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime);
       // Note: avgDailyDemand = 80/7 ≈11.4286 →11.43; daysRemaining=50/11.4286≈4.375→4.38
       expect(forecast.avgDailyDemand).toBe(11.43);
       expect(forecast.daysRemaining).toBe(4.38);
       expect(forecast.riskLevel).toBe('high'); // 4.38 < 5
       expect(forecast.recommendation).toBe('Reorder immediately');
+      // New fields (do not break shape)
+      expect(forecast.demandStdDev).toBe(2.07);  // From safety stock utility
+      expect(forecast.safetyStock).toBeCloseTo(7.64, 2);   // Default Z=1.65 (JS rounding)
+    });
+
+    // New test: forecast with custom Z (still backward compat for old calls)
+    test('computes forecast with custom serviceLevelZ', () => {
+      const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime, 2.33);
+      expect(forecast.demandStdDev).toBe(2.07);
+      expect(forecast.safetyStock).toBeCloseTo(10.79, 2);  // Custom Z (JS rounding)
+      // Original fields unchanged
+      expect(forecast.riskLevel).toBe('high');
     });
 
     test('handles zero demand case', () => {
@@ -108,14 +164,18 @@ describe('Inventory Management System', () => {
       expect(forecast.daysRemaining).toBe('Infinite');
     });
 
-    // New test for validation consistency: main forecast function now gracefully
-    // handles invalid inputs via defensive utilities (no throws, safe defaults)
+    // Updated for safety stock extension: main forecast now includes new fields
+    // but gracefully handles invalid inputs defensively (no throws, safe defaults)
+    // Original shape/behavior preserved for consumers
     test('handles invalid inputs defensively in full forecast', () => {
-      const forecast = calculateInventoryForecast('invalid', -10, -5);  // Triggers avg=0, days=0, risk=low
+      const forecast = calculateInventoryForecast('invalid', -10, -5);  // Triggers avg=0, days=0, risk=low, safety=0
       expect(forecast.avgDailyDemand).toBe(0);
-      expect(forecast.daysRemaining).toBe(0);  // From updated calculateDaysRemaining
-      expect(forecast.riskLevel).toBe('low');  // From updated detectStockoutRisk
+      expect(forecast.daysRemaining).toBe(0);  // From calculateDaysRemaining
+      expect(forecast.riskLevel).toBe('low');  // From detectStockoutRisk
       expect(forecast.recommendation).toBe('Monitor stock levels');
+      // New fields default safely
+      expect(forecast.demandStdDev).toBe(0);
+      expect(forecast.safetyStock).toBe(0);
     });
   });
 });
