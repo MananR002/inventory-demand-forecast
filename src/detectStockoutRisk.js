@@ -1,26 +1,36 @@
 /**
  * Detects stockout risk based on days remaining and supplier lead time.
+ * Uses RISK_LEVELS enum for improved code structure/readability (prevents magic strings).
  * @param {number} daysRemaining - Estimated days before stock runs out.
  * @param {number} leadTime - Supplier lead time in days.
- * @returns {string} Risk level: 'high' if daysRemaining < leadTime, 'medium' if within 1.5*leadTime, else 'low'.
- * Returns 'low' (safest default) for any invalid inputs to ensure consistency with other utilities' defensive validation.
+ * @returns {string} Risk level from RISK_LEVELS: HIGH if daysRemaining < leadTime, MEDIUM if within 1.5*leadTime, else LOW.
+ * Returns LOW (safest default) for any invalid inputs to ensure consistency with other utilities' defensive validation.
  */
+
+// Enum-like const for risk levels (JS best practice; improves structure, type safety in code)
+const RISK_LEVELS = {
+  LOW: 'low',     // No/safe risk
+  MEDIUM: 'medium', // Moderate risk (monitor)
+  HIGH: 'high'    // Imminent stockout risk (reorder now)
+};
+
 function detectStockoutRisk(daysRemaining, leadTime) {
-  // Defensive validation for consistency: return 'low' (no risk/safe default) for invalid/non-numeric inputs
+  // Defensive validation for consistency: return RISK_LEVELS.LOW (no risk/safe default) for invalid/non-numeric inputs
   // (e.g., NaN, non-numbers, negative leadTime). This prevents errors in chained calls like calculateInventoryForecast
   // and aligns with calculateAverageDemand / calculateDaysRemaining returning safe defaults for real-world data.
   if (typeof daysRemaining !== 'number' || typeof leadTime !== 'number' || leadTime < 0 || daysRemaining < 0) {
-    return 'low';
+    return RISK_LEVELS.LOW;
   }
   if (daysRemaining === Infinity) {
-    return 'low'; // No stockout risk if no demand
+    return RISK_LEVELS.LOW; // No stockout risk if no demand
   }
   if (daysRemaining < leadTime) {
-    return 'high'; // Imminent stockout risk
+    return RISK_LEVELS.HIGH; // Imminent stockout risk
   } else if (daysRemaining < leadTime * 1.5) {
-    return 'medium';
+    return RISK_LEVELS.MEDIUM;
   }
-  return 'low';
+  return RISK_LEVELS.LOW;
 }
 
-module.exports = detectStockoutRisk;
+// Export func + enum for use elsewhere (e.g., tests/comparisons)
+module.exports = { detectStockoutRisk, RISK_LEVELS };

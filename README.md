@@ -79,6 +79,7 @@ console.log(avgDemand); // 11.42857...
  * calculateInventoryForecast([null], -1, 'invalid') → safe output).
  *
  * Extensions (all reuse avg/safety logic; no dup):
+ * - Stockout Risk Detection: now uses RISK_LEVELS enum {LOW: 'low', MEDIUM: 'medium', HIGH: 'high'} for better structure (no magic strings; exported from util/index).
  * - Demand variability & safety stock: calculateSafetyStock(historicalDemand, leadTime, [zScore=1.65], [avgDemand?])
  *   - Reuses avg for optimization; zScore rename (std stats); variance accumulates linearly (std dev scales with sqrt(time) → *sqrt(LeadTime) in formula).
  * - Reorder Point: calculateReorderPoint(historicalDemand, leadTime, [zScore=1.65]) reuses avg + safety; triggers orders in real systems.

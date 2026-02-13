@@ -2,6 +2,7 @@ const {
   calculateAverageDemand,
   calculateDaysRemaining,
   detectStockoutRisk,
+  RISK_LEVELS,           // Enum for risk levels ('low', 'medium', 'high') - improves structure
   calculateSafetyStock,  // For demand std dev + safety stock
   calculateReorderPoint, // Reorder point reusing avg + safety logic
   calculateEOQ,          // New: EOQ for order quantity (reuses avg)
@@ -67,31 +68,38 @@ describe('Inventory Management System', () => {
   });
 
   describe('detectStockoutRisk', () => {
+    // Uses RISK_LEVELS enum for comparisons/returns (improved structure, no magic strings)
+    // Enum exported from util and re-exported in index for consistency
     test('detects high risk when daysRemaining < leadTime', () => {
-      expect(detectStockoutRisk(3, 5)).toBe('high');
+      expect(detectStockoutRisk(3, 5)).toBe(RISK_LEVELS.HIGH);
     });
 
     test('detects medium risk when within 1.5*leadTime', () => {
-      expect(detectStockoutRisk(6, 5)).toBe('medium'); // 6 < 7.5
+      expect(detectStockoutRisk(6, 5)).toBe(RISK_LEVELS.MEDIUM); // 6 < 7.5
     });
 
     test('detects low risk otherwise', () => {
-      expect(detectStockoutRisk(10, 5)).toBe('low');
+      expect(detectStockoutRisk(10, 5)).toBe(RISK_LEVELS.LOW);
     });
 
     test('low risk for infinite days', () => {
-      expect(detectStockoutRisk(Infinity, 5)).toBe('low');
+      expect(detectStockoutRisk(Infinity, 5)).toBe(RISK_LEVELS.LOW);
     });
 
-    // Updated for validation consistency: now returns 'low' (safest default) for
+    // Updated for validation consistency: now returns RISK_LEVELS.LOW (safest default) for
     // invalid/non-number/negative inputs (defensive, no throw). This aligns with
     // other utilities and prevents errors in chained calls.
     test('returns low risk (safe default) for invalid inputs', () => {
-      expect(detectStockoutRisk(10, -1)).toBe('low');
-      expect(detectStockoutRisk('invalid', 5)).toBe('low');
-      expect(detectStockoutRisk(NaN, 5)).toBe('low');
-      expect(detectStockoutRisk(10, 'invalid')).toBe('low');
-      expect(detectStockoutRisk(-5, 5)).toBe('low');  // Negative days also safe default
+      expect(detectStockoutRisk(10, -1)).toBe(RISK_LEVELS.LOW);
+      expect(detectStockoutRisk('invalid', 5)).toBe(RISK_LEVELS.LOW);
+      expect(detectStockoutRisk(NaN, 5)).toBe(RISK_LEVELS.LOW);
+      expect(detectStockoutRisk(10, 'invalid')).toBe(RISK_LEVELS.LOW);
+      expect(detectStockoutRisk(-5, 5)).toBe(RISK_LEVELS.LOW);  // Negative days also safe default
+    });
+
+    // Test enum usage directly (demonstrates improved structure)
+    test('exports RISK_LEVELS enum for external use', () => {
+      expect(RISK_LEVELS).toEqual({ LOW: 'low', MEDIUM: 'medium', HIGH: 'high' });
     });
   });
 
@@ -226,11 +234,12 @@ describe('Inventory Management System', () => {
       // Backward compat test: call with original 3 args (uses default zScore=1.65, cost defaults)
       // Original fields unchanged; new fields added for full extension (EOQ now uses 250 business days)
       // Internally reuses avgDailyDemand in safety/reorder/EOQ utils (no dup logic)
+      // riskLevel uses RISK_LEVELS enum (improved structure)
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime);
       // Note: avgDailyDemand = 80/7 ≈11.4286 →11.43; daysRemaining=50/11.4286≈4.375→4.38
       expect(forecast.avgDailyDemand).toBe(11.43);
       expect(forecast.daysRemaining).toBe(4.38);
-      expect(forecast.riskLevel).toBe('high'); // 4.38 < 5
+      expect(forecast.riskLevel).toBe(RISK_LEVELS.HIGH); // 4.38 < 5
       expect(forecast.recommendation).toBe('Reorder immediately');
       // New fields (do not break shape)
       expect(forecast.demandStdDev).toBe(2.07);  // From safety stock utility
@@ -246,8 +255,8 @@ describe('Inventory Management System', () => {
       expect(forecast.safetyStock).toBeCloseTo(10.79, 2);  // Custom zScore (JS rounding)
       expect(forecast.reorderPoint).toBeCloseTo(67.93, 2);  // (avg*leadTime) + custom safety
       expect(forecast.eoq).toBeCloseTo(239.05, 2);  // EOQ unaffected by zScore (uses avg + 250 biz days)
-      // Original fields unchanged
-      expect(forecast.riskLevel).toBe('high');
+      // Original fields unchanged; uses enum
+      expect(forecast.riskLevel).toBe(RISK_LEVELS.HIGH);
     });
 
     // New test: forecast with custom order/holding costs for EOQ (back compat)
@@ -256,25 +265,26 @@ describe('Inventory Management System', () => {
       // Old calls unaffected (uses cost defaults); reuses avg in EOQ util (250 biz days)
       const forecast = calculateInventoryForecast(sampleHistoricalDemand, sampleCurrentStock, sampleLeadTime, 1.65, 50, 20);
       expect(forecast.eoq).toBeCloseTo(119.52, 2);  // EOQ with adjusted costs
-      // Other fields unchanged
+      // Other fields unchanged; uses enum
       expect(forecast.reorderPoint).toBeCloseTo(64.78, 2);
-      expect(forecast.riskLevel).toBe('high');
+      expect(forecast.riskLevel).toBe(RISK_LEVELS.HIGH);
     });
 
     test('handles zero demand case', () => {
       const forecast = calculateInventoryForecast([0, 0, 0], 50, 5);
-      expect(forecast.riskLevel).toBe('low');
+      expect(forecast.riskLevel).toBe(RISK_LEVELS.LOW);
       expect(forecast.daysRemaining).toBe('Infinite');
     });
 
     // Updated for EOQ extension: main forecast now includes eoq
     // but gracefully handles invalid inputs defensively (no throws, safe defaults)
     // Original shape/behavior preserved for consumers; reuses utils internally
+    // riskLevel from RISK_LEVELS enum
     test('handles invalid inputs defensively in full forecast', () => {
       const forecast = calculateInventoryForecast('invalid', -10, -5);  // Triggers avg=0, days=0, risk=low, safety=0, reorder=0, eoq=0
       expect(forecast.avgDailyDemand).toBe(0);
       expect(forecast.daysRemaining).toBe(0);  // From calculateDaysRemaining
-      expect(forecast.riskLevel).toBe('low');  // From detectStockoutRisk
+      expect(forecast.riskLevel).toBe(RISK_LEVELS.LOW);  // From detectStockoutRisk enum
       expect(forecast.recommendation).toBe('Monitor stock levels');
       // New fields default safely (EOQ/reorder reuse)
       expect(forecast.demandStdDev).toBe(0);
