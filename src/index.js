@@ -10,6 +10,9 @@ const detectStockoutRisk = require('./detectStockoutRisk');
 
 /**
  * Main function to calculate demand forecast and inventory risk.
+ * All inputs are handled defensively for consistency (see utility functions for details):
+ * - Invalid data returns safe defaults (e.g., avg=0, days=0, risk='low') instead of throwing.
+ * This ensures robustness for real-world inventory scenarios.
  * @param {number[]} historicalDemand - Array of historical daily demand data.
  * @param {number} currentStock - Current stock level.
  * @param {number} leadTime - Supplier lead time in days.

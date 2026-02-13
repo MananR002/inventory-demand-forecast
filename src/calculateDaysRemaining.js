@@ -3,11 +3,14 @@
  * assuming demand continues at the average daily rate.
  * @param {number} currentStock - Current stock level.
  * @param {number} avgDailyDemand - Average daily demand.
- * @returns {number} Estimated days remaining. Returns Infinity if demand is 0, 0 if stock <=0.
+ * @returns {number} Estimated days remaining. Returns 0 for invalid inputs (<=0 stock, non-numbers) or Infinity if demand is 0.
+ * This defensive approach ensures consistency with calculateAverageDemand for robust utility usage.
  */
 function calculateDaysRemaining(currentStock, avgDailyDemand) {
+  // Defensive validation for consistency: return 0 for any invalid/non-numeric inputs
+  // (matches calculateAverageDemand's style for real-world data handling)
   if (typeof currentStock !== 'number' || typeof avgDailyDemand !== 'number') {
-    throw new Error('Both currentStock and avgDailyDemand must be numbers');
+    return 0;
   }
   if (currentStock <= 0) {
     return 0;

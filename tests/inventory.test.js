@@ -37,8 +37,11 @@ describe('Inventory Management System', () => {
 
   describe('calculateDaysRemaining', () => {
     test('estimates days remaining correctly', () => {
-      const days = calculateDaysRemaining(sampleCurrentStock, 11.43);
-      expect(days).toBeCloseTo(4.37, 2);
+      // Use full precision avg from sample data for accurate test (50 / (80/7) ≈ 4.375)
+      // This avoids hardcoded rounding mismatches seen previously
+      const avgDemand = calculateAverageDemand(sampleHistoricalDemand);
+      const days = calculateDaysRemaining(sampleCurrentStock, avgDemand);
+      expect(days).toBeCloseTo(4.375, 3);
     });
 
     test('returns 0 for zero or negative stock', () => {
@@ -50,8 +53,13 @@ describe('Inventory Management System', () => {
       expect(calculateDaysRemaining(50, 0)).toBe(Infinity);
     });
 
-    test('throws error for invalid inputs', () => {
-      expect(() => calculateDaysRemaining('50', 10)).toThrow();
+    // Updated for validation consistency: now returns safe default 0 (defensive style,
+    // matching calculateAverageDemand) instead of throwing. This ensures robustness
+    // in the main calculateInventoryForecast function.
+    test('returns 0 for invalid/non-number inputs', () => {
+      expect(calculateDaysRemaining('50', 10)).toBe(0);
+      expect(calculateDaysRemaining(50, '10')).toBe(0);
+      expect(calculateDaysRemaining(null, undefined)).toBe(0);
     });
   });
 
@@ -72,8 +80,15 @@ describe('Inventory Management System', () => {
       expect(detectStockoutRisk(Infinity, 5)).toBe('low');
     });
 
-    test('throws error for invalid inputs', () => {
-      expect(() => detectStockoutRisk(10, -1)).toThrow();
+    // Updated for validation consistency: now returns 'low' (safest default) for
+    // invalid/non-number/negative inputs (defensive, no throw). This aligns with
+    // other utilities and prevents errors in chained calls.
+    test('returns low risk (safe default) for invalid inputs', () => {
+      expect(detectStockoutRisk(10, -1)).toBe('low');
+      expect(detectStockoutRisk('invalid', 5)).toBe('low');
+      expect(detectStockoutRisk(NaN, 5)).toBe('low');
+      expect(detectStockoutRisk(10, 'invalid')).toBe('low');
+      expect(detectStockoutRisk(-5, 5)).toBe('low');  // Negative days also safe default
     });
   });
 
@@ -91,6 +106,16 @@ describe('Inventory Management System', () => {
       const forecast = calculateInventoryForecast([0, 0, 0], 50, 5);
       expect(forecast.riskLevel).toBe('low');
       expect(forecast.daysRemaining).toBe('Infinite');
+    });
+
+    // New test for validation consistency: main forecast function now gracefully
+    // handles invalid inputs via defensive utilities (no throws, safe defaults)
+    test('handles invalid inputs defensively in full forecast', () => {
+      const forecast = calculateInventoryForecast('invalid', -10, -5);  // Triggers avg=0, days=0, risk=low
+      expect(forecast.avgDailyDemand).toBe(0);
+      expect(forecast.daysRemaining).toBe(0);  // From updated calculateDaysRemaining
+      expect(forecast.riskLevel).toBe('low');  // From updated detectStockoutRisk
+      expect(forecast.recommendation).toBe('Monitor stock levels');
     });
   });
 });

@@ -61,6 +61,13 @@ console.log(forecast);
 // Or use individual utilities
 const avgDemand = calculateAverageDemand(historicalDemand);
 console.log(avgDemand); // 11.42857...
+
+/**
+ * Note on consistent validation: All functions use defensive programming
+ * (return safe defaults like 0/'low' for invalid inputs) instead of throwing errors.
+ * This makes the library robust for real-world messy data (e.g., no crashes in
+ * calculateInventoryForecast([null], -1, 'invalid') → safe output).
+ */
 ```
 
 ## Development
